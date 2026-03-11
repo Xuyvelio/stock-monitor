@@ -131,6 +131,7 @@ def main():
     ids = load_ids()
     anns = fetch_announcements()
     print(f"抓取公告：{len(anns)} 条")
+    for a in anns[:10]: print(f"  标题: {a['title']}")
     pushed = 0
     for ann in anns:
         if ann["id"] in ids:
