@@ -55,8 +55,36 @@ def is_major(title):
     return any(kw in title for kw in KEYWORDS)
 
 def analyze(ann):
-    if not GEMINI_API_KEY:
-        return {"is_positive": True, "score": 5, "reason": "未配置Key", "risk": "-", "suggestion": "-"}
+    """本地关键词规则打分，不依赖外部AI"""
+    title = ann["title"]
+    score = 6  # 基础分
+    reason = "命中重大事件关键词"
+    
+    if any(kw in title for kw in ["重大资产重组", "借壳", "要约收购"]):
+        score = 9
+        reason = "重大资产重组/借壳/要约收购，市场高度关注"
+    elif any(kw in title for kw in ["收购", "并购", "合并"]):
+        score = 8
+        reason = "收购/并购事件，可能带来估值重塑"
+    elif any(kw in title for kw in ["控制权变更", "实际控制人"]):
+        score = 8
+        reason = "控制权变更，公司发展方向可能改变"
+    elif any(kw in title for kw in ["重大合同", "重大投资"]):
+        score = 7
+        reason = "重大合同/投资，业绩有望提升"
+    
+    # 含"终止""撤回""失败"等负面词降分
+    if any(kw in title for kw in ["终止", "撤回", "失败", "取消", "无法"]):
+        score = max(3, score - 4)
+        reason = "事项终止或失败，可能构成利空"
+    
+    return {
+        "is_positive": score >= 6,
+        "score": score,
+        "reason": reason,
+        "risk": "请结合基本面自行判断",
+        "suggestion": "关注后续公告进展"
+    }
     prompt = f"""你是资深A股分析师，分析以下公告对股票的影响：
 股票：{ann['stock_name']}（{ann['stock_code']}）
 公告：{ann['title']}
