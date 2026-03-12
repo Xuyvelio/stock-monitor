@@ -13,7 +13,7 @@ KEYWORDS = [
     "收购", "并购", "合并",
     "股权收购", "要约收购",
     "控制权变更", "实际控制人",
-    "重大合同", "重大投资", "增资", "借壳",
+    "重大合同", "重大投资", "增资", "借壳", "上市" ,
 ]
 
 def fetch_announcements():
@@ -60,9 +60,9 @@ def analyze(ann):
     score = 6  # 基础分
     reason = "命中重大事件关键词"
     
-    if any(kw in title for kw in ["重大资产重组", "借壳", "要约收购"]):
+    if any(kw in title for kw in ["重大资产重组", "借壳", "上市" , "要约收购"]):
         score = 9
-        reason = "重大资产重组/借壳/要约收购，市场高度关注"
+        reason = "重大资产重组/借壳/上市/要约收购，市场高度关注"
     elif any(kw in title for kw in ["收购", "并购", "合并"]):
         score = 8
         reason = "收购/并购事件，可能带来估值重塑"
