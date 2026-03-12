@@ -2,7 +2,7 @@ name: A股重大公告监控
 
 on:
   schedule:
-    - cron: "*/5 1-10 * * 1-5"
+    - cron: "*/5 1-14 * * 1-5"
   workflow_dispatch:
 
 jobs:
