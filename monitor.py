@@ -13,7 +13,11 @@ KEYWORDS = [
     "收购", "并购", "合并",
     "股权收购", "要约收购",
     "控制权变更", "实际控制人",
-    "重大合同", "重大投资", "增资", "借壳", "上市" ,
+    "重大合同", "重大投资", "增资", "借壳",
+    "分拆上市", "分拆",
+    "股票回购", "回购",
+    "业绩预增", "业绩大幅增长",
+    "定向增发", "非公开发行",
 ]
 
 def fetch_announcements():
@@ -59,25 +63,37 @@ def analyze(ann):
     title = ann["title"]
     score = 6  # 基础分
     reason = "命中重大事件关键词"
-    
-    if any(kw in title for kw in ["重大资产重组", "借壳", "上市" , "要约收购"]):
+
+    if any(kw in title for kw in ["重大资产重组", "借壳", "要约收购"]):
         score = 9
-        reason = "重大资产重组/借壳/上市/要约收购，市场高度关注"
+        reason = "重大资产重组/借壳/要约收购，市场高度关注"
     elif any(kw in title for kw in ["收购", "并购", "合并"]):
         score = 8
         reason = "收购/并购事件，可能带来估值重塑"
     elif any(kw in title for kw in ["控制权变更", "实际控制人"]):
         score = 8
         reason = "控制权变更，公司发展方向可能改变"
+    elif any(kw in title for kw in ["分拆上市", "分拆"]):
+        score = 8
+        reason = "分拆上市，子公司独立估值重塑"
     elif any(kw in title for kw in ["重大合同", "重大投资"]):
         score = 7
         reason = "重大合同/投资，业绩有望提升"
-    
-    # 含"终止""撤回""失败"等负面词降分
+    elif any(kw in title for kw in ["业绩预增", "业绩大幅增长"]):
+        score = 7
+        reason = "业绩超预期增长，基本面改善"
+    elif any(kw in title for kw in ["定向增发", "非公开发行"]):
+        score = 7
+        reason = "定向增发引入资金，看好公司发展"
+    elif any(kw in title for kw in ["股票回购", "回购"]):
+        score = 7
+        reason = "大额回购彰显信心，护盘意图明显"
+
+    # 含负面词降分
     if any(kw in title for kw in ["终止", "撤回", "失败", "取消", "无法"]):
         score = max(3, score - 4)
         reason = "事项终止或失败，可能构成利空"
-    
+
     return {
         "is_positive": score >= 6,
         "score": score,
@@ -85,19 +101,6 @@ def analyze(ann):
         "risk": "请结合基本面自行判断",
         "suggestion": "关注后续公告进展"
     }
-    prompt = f"""你是资深A股分析师，分析以下公告对股票的影响：
-股票：{ann['stock_name']}（{ann['stock_code']}）
-公告：{ann['title']}
-只返回JSON：{{"is_positive":true或false,"score":1到10的整数,"reason":"原因50字内","risk":"风险30字内","suggestion":"建议30字内"}}"""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-    try:
-        r = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=20)
-        text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-        text = text.strip().replace("```json","").replace("```","").strip()
-        return json.loads(text)
-    except Exception as e:
-        print(f"[Gemini失败] {e}")
-        return {"is_positive": True, "score": 5, "reason": "分析失败", "risk": "-", "suggestion": "请自行判断"}
 
 def push(ann, analysis):
     if not SERVERCHAN_KEY:
@@ -108,7 +111,7 @@ def push(ann, analysis):
         return
     stars = "⭐" * min(score, 10)
     title = f"🔔 {ann['stock_name']}（{ann['stock_code']}）重大公告"
-    content = f"## {ann['title']}\n\n**时间：** {ann['time']}\n\n| 项目 | 内容 |\n|------|------|\n| 利好评分 | {stars} {score}/10 |\n| 原因 | {analysis.get('reason','-')} |\n| 风险 | {analysis.get('risk','-')} |\n| 建议 | {analysis.get('suggestion','-')} |\n\n🔗 [查看原文]({ann['url']})\n\n> ⚠️ AI分析仅供参考，不构成投资建议"
+    content = f"## {ann['title']}\n\n**时间：** {ann['time']}\n\n| 项目 | 内容 |\n|------|------|\n| 利好评分 | {stars} {score}/10 |\n| 原因 | {analysis.get('reason','-')} |\n| 风险 | {analysis.get('risk','-')} |\n| 建议 | {analysis.get('suggestion','-')} |\n\n🔗 [查看原文]({ann['url']})\n\n> ⚠️ 以上为规则分析，仅供参考，不构成投资建议"
     try:
         r = requests.post(f"https://sctapi.ftqq.com/{SERVERCHAN_KEY}.send", data={"title": title, "desp": content}, timeout=10)
         print(f"[推送结果] {r.json()}")
@@ -131,7 +134,6 @@ def main():
     ids = load_ids()
     anns = fetch_announcements()
     print(f"抓取公告：{len(anns)} 条")
-    for a in anns[:10]: print(f"  标题: {a['title']}")
     pushed = 0
     for ann in anns:
         if ann["id"] in ids:
