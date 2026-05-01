@@ -5,6 +5,9 @@ import requests
 from datetime import datetime, date
 
 SERVERCHAN_KEY = os.environ.get("SERVERCHAN_KEY", "")
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+DEEPSEEK_MODEL = "deepseek-chat"
 STATE_FILE = "processed_ids.json"
 CONFIG_FILE = "config.json"
 
@@ -147,6 +150,10 @@ IGNORE_KEYWORDS = CONFIG["ignore"].get("keywords", [])
 PREFERRED_TRACKS = set(CONFIG.get("preferred_tracks", []))
 SUMMARY_CONFIG = CONFIG.get("summary", {})
 LOGGING_CONFIG = CONFIG.get("logging", {})
+
+# API key: 环境变量优先，config.json 兜底
+if not DEEPSEEK_API_KEY:
+    DEEPSEEK_API_KEY = CONFIG.get("deepseek_api_key", "")
 
 
 # ─────────────────────────────────────────
@@ -337,6 +344,81 @@ def get_market_data(code):
     except Exception as e:
         print(f"[行情获取失败] {code}: {e}")
         return None
+
+
+# ─────────────────────────────────────────
+# AI 评分（DeepSeek）
+# ─────────────────────────────────────────
+
+AI_PROMPT = """你是A股公告分析专家。根据公告标题和正文，判断该公告对股价的影响。
+
+评分规则：
+- 9~10分：重大利好，大概率涨停或连续涨停（停牌重组、摘帽、要约收购等）
+- 7~8分：明确利好，有较高概率大涨（定增引入战投、业绩超预期、重大合同等）
+- 5~6分：中性偏正，可能小幅上涨（回购、增持、中标等）
+- 3~4分：中性或不确定（进展公告、审议结果等）
+- 1~2分：偏负面（减持、质押、诉讼等）
+- 0分：明确利空（终止重组、业绩暴雷、立案调查等）
+
+注意以下陷阱：
+- 标题写"收购"但正文可能是"收购终止"
+- 标题写"重大事项"但正文可能是"终止筹划"
+- "审议通过"只是流程推进，不代表落地
+- "存在不确定性"意味着结果未定
+
+请用JSON格式返回，包含以下字段：
+- score: 0-10的整数
+- sentiment: "利好"/"中性"/"利空"
+- confidence: "高"/"中"/"低"
+- reason: 一句话分析理由（30字以内）"""
+
+
+def ai_score(title, content=""):
+    """用 DeepSeek 对公告做智能评分"""
+    if not DEEPSEEK_API_KEY:
+        return None
+
+    user_msg = f"公告标题：{title}"
+    if content:
+        # 限制正文长度，避免token过多
+        user_msg += f"\n\n公告正文（前1500字）：\n{content[:1500]}"
+
+    try:
+        r = requests.post(
+            f"{DEEPSEEK_BASE_URL}/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": DEEPSEEK_MODEL,
+                "messages": [
+                    {"role": "system", "content": AI_PROMPT},
+                    {"role": "user", "content": user_msg},
+                ],
+                "temperature": 0.1,
+                "max_tokens": 200,
+            },
+            timeout=15,
+        )
+        data = r.json()
+        text = data["choices"][0]["message"]["content"].strip()
+
+        # 解析JSON
+        import re
+        json_match = re.search(r'\{[^}]+\}', text)
+        if json_match:
+            import json
+            result = json.loads(json_match.group())
+            return {
+                "score": int(result.get("score", 5)),
+                "sentiment": result.get("sentiment", "中性"),
+                "confidence": result.get("confidence", "低"),
+                "reason": result.get("reason", ""),
+            }
+    except Exception as e:
+        print(f"[AI评分失败] {e}")
+    return None
 
 
 # ─────────────────────────────────────────
@@ -561,14 +643,15 @@ def analyze(ann):
 
     # 正文校验：对高分公告抓取PDF，检查正文是否有负面内容
     content_verified = False
+    content_text = ""
     if score >= 7 and not negative_hits:
-        content = fetch_notice_content(code, name)
-        if content:
+        content_text = fetch_notice_content(code, name)
+        if content_text:
             content_verified = True
             # 检查正文中的负面关键词
-            content_negative = hit_keywords(content, NEGATIVE_KEYWORDS)
+            content_negative = hit_keywords(content_text, NEGATIVE_KEYWORDS)
             # 额外检查正文特有的终止/失败模式
-            content_terminate = [kw for kw in ["终止实施", "不再继续", "予以撤回", "未获通过", "审核不通过", "已过期"] if kw in content]
+            content_terminate = [kw for kw in ["终止实施", "不再继续", "予以撤回", "未获通过", "审核不通过", "已过期"] if kw in content_text]
             all_negative = content_negative + content_terminate
             if all_negative:
                 penalty = 4
@@ -577,12 +660,31 @@ def analyze(ann):
                 reason += f"。正文发现负面信息（{'、'.join(all_negative[:2])}），标题与内容不符，-{penalty}分"
                 event_type = "正文利空"
             # 检查正文中的不确定性
-            content_uncertain = hit_keywords(content, ["尚需经", "能否获得", "最终结果", "存在重大不确定性"])
+            content_uncertain = hit_keywords(content_text, ["尚需经", "能否获得", "最终结果", "存在重大不确定性"])
             if content_uncertain and not all_negative:
                 penalty = 2
                 score = max(2, score - penalty)
                 penalties.append(f"正文不确定-{penalty}")
                 reason += f"。正文存在不确定性表述，-{penalty}分"
+
+    # AI 评分：对高分公告调用 DeepSeek 做智能分析
+    ai_result = None
+    if score >= 7 and DEEPSEEK_API_KEY:
+        ai_result = ai_score(title, content_text)
+        if ai_result:
+            ai_s = ai_result["score"]
+            # AI 和规则加权：规则60% + AI40%
+            blended = round(score * 0.6 + ai_s * 0.4)
+            # 只在AI认为明显更低时降分（防止AI误杀），AI认为更高时不加分
+            if blended < score - 1:
+                old_score = score
+                score = max(2, blended)
+                penalties.append(f"AI降分（{ai_result['reason'][:20]}）")
+                reason += f"。AI分析：{ai_result['reason']}，综合评分从{old_score}调整为{score}"
+            elif ai_s > score:
+                # AI认为更高，小幅加分（最多+1）
+                score = min(10, score + 1)
+                bonuses.append(f"AI+1（{ai_result['reason'][:15]}）")
 
     explosive_ready = explosive_event and not procedural_hits and not uncertainty_hits and not negative_hits and not large_cap
     if instant_only_explosive:
@@ -633,6 +735,7 @@ def analyze(ann):
         "market": market,
         "market_info": market_info,
         "content_verified": content_verified,
+        "ai_result": ai_result,
     }
 
 

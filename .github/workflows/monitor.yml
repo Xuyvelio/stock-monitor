@@ -33,6 +33,7 @@ jobs:
       - name: 运行监控
         env:
           SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: python monitor.py
 
       - name: 保存状态
