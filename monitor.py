@@ -3,6 +3,9 @@ import json
 import time
 import requests
 from datetime import datetime, date
+import re
+import subprocess
+import tempfile
 
 SERVERCHAN_KEY = os.environ.get("SERVERCHAN_KEY", "")
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
@@ -218,7 +221,7 @@ def is_bond(code):
 
 
 def is_noise(title):
-    return any(kw in title for kw in BLACKLIST + IGNORE_KEYWORDS)
+    return any(kw in title for kw in BLACKLIST)
 
 
 def is_hard_filtered(title):
@@ -269,8 +272,17 @@ def hit_keywords(text, keywords):
 # ─────────────────────────────────────────
 # 行情数据（腾讯接口）
 # ─────────────────────────────────────────
+_market_cache = {}
+
 def get_market_data(code):
-    """获取股票实时行情数据"""
+    """获取股票实时行情数据（同轮次内缓存）"""
+    if code in _market_cache:
+        return _market_cache[code]
+    result = _fetch_market_data(code)
+    _market_cache[code] = result
+    return result
+
+def _fetch_market_data(code):
     # 腾讯行情接口: 0=深圳 1=上海
     if code.startswith("6"):
         symbol = f"sh{code}"
@@ -340,6 +352,8 @@ def get_market_data(code):
 # ─────────────────────────────────────────
 # AI 评分（DeepSeek）
 # ─────────────────────────────────────────
+_ai_call_count = 0
+AI_MAX_CALLS_PER_RUN = 5
 
 AI_PROMPT = """你是A股公告分析专家。根据公告标题和正文，判断该公告对股价的影响。
 
@@ -366,8 +380,13 @@ AI_PROMPT = """你是A股公告分析专家。根据公告标题和正文，判�
 
 def ai_score(title, content=""):
     """用 DeepSeek 对公告做智能评分"""
+    global _ai_call_count
     if not DEEPSEEK_API_KEY:
         return None
+    if _ai_call_count >= AI_MAX_CALLS_PER_RUN:
+        print(f"[AI评分] 已达本轮上限({AI_MAX_CALLS_PER_RUN}次)，跳过")
+        return None
+    _ai_call_count += 1
 
     user_msg = f"公告标题：{title}"
     if content:
@@ -396,10 +415,8 @@ def ai_score(title, content=""):
         text = data["choices"][0]["message"]["content"].strip()
 
         # 解析JSON
-        import re
         json_match = re.search(r'\{[^}]+\}', text)
         if json_match:
-            import json
             result = json.loads(json_match.group())
             return {
                 "score": int(result.get("score", 5)),
@@ -415,10 +432,8 @@ def ai_score(title, content=""):
 # ─────────────────────────────────────────
 # 公告正文抓取（巨潮PDF）
 # ─────────────────────────────────────────
-def fetch_notice_content(code, name):
+def fetch_notice_content(code, name, title=""):
     """从巨潮资讯网下载PDF并提取正文"""
-    import subprocess
-    import tempfile
     try:
         # 1. 搜索公告，获取PDF链接（用股票代码搜索）
         search_url = "https://www.cninfo.com.cn/new/fulltextSearch/full"
@@ -439,12 +454,22 @@ def fetch_notice_content(code, name):
         data = r.json()
         announcements = data.get("announcements") or []
 
-        # 找到匹配的公告
+        # 找到匹配的公告（精确匹配：代码+标题关键词）
         pdf_url = None
-        for ann in announcements:
-            if ann.get("secCode") == code and ann.get("adjunctUrl"):
-                pdf_url = f"https://static.cninfo.com.cn/{ann['adjunctUrl']}"
-                break
+        title_keywords = [title[:8]] if title else []
+        for item in announcements:
+            if item.get("secCode") == code and item.get("adjunctUrl"):
+                item_title = re.sub(r"<[^>]+>", "", item.get("announcementTitle", ""))
+                # 优先匹配标题相似的
+                if any(kw in item_title for kw in title_keywords[:1]):
+                    pdf_url = f"https://static.cninfo.com.cn/{item['adjunctUrl']}"
+                    break
+        # 如果没找到精确匹配，用第一条
+        if not pdf_url:
+            for item in announcements:
+                if item.get("secCode") == code and item.get("adjunctUrl"):
+                    pdf_url = f"https://static.cninfo.com.cn/{item['adjunctUrl']}"
+                    break
 
         if not pdf_url:
             return ""
@@ -472,7 +497,6 @@ def fetch_notice_content(code, name):
                     text += t
             return text[:3000]  # 限制长度
         finally:
-            import os
             os.unlink(tmp_path)
 
     except Exception as e:
@@ -536,9 +560,9 @@ def analyze(ann):
         score, base_score, event_type = 7, 7, "股票回购"
         reason = "大额回购彰显信心，护盘意图明显"
     else:
-        # 自选股公告但未命中任何重大事件关键词
-        event_type = "自选股公告"
-        reason = "自选股公告，未命中重大事件关键词，关注后续进展"
+        # 未匹配到已知事件类型（理论上不会走到这里，主循环已过滤）
+        event_type = "其他公告"
+        reason = "未命中已知事件类型，需人工判断"
 
     if explosive_event:
         bonuses.append("爆发型事件")
@@ -627,7 +651,7 @@ def analyze(ann):
     content_verified = False
     content_text = ""
     if score >= 7 and not negative_hits:
-        content_text = fetch_notice_content(code, name)
+        content_text = fetch_notice_content(code, name, title)
         if content_text:
             content_verified = True
             # 检查正文中的负面关键词
@@ -651,7 +675,7 @@ def analyze(ann):
 
     # AI 评分：对高分公告调用 DeepSeek 做智能分析
     ai_result = None
-    if score >= 7 and DEEPSEEK_API_KEY:
+    if score >= 7 and DEEPSEEK_API_KEY and not all_negative:
         ai_result = ai_score(title, content_text)
         if ai_result:
             ai_s = ai_result["score"]
@@ -811,7 +835,14 @@ def push_summary(candidates, state):
     # 找到下一个还没推过、且当前时间已过的推送时间点
     target_hour = None
     for h in send_hours:
-        if h not in sent_hours and current_hour >= h:
+        # 24点特殊处理：hour=0表示午夜
+        effective_h = h % 24
+        if h == 24:
+            # 午夜汇总：23:00之后或次日0:00都算
+            if effective_h not in sent_hours and (current_hour >= 23 or current_hour == 0):
+                target_hour = h
+                break
+        elif effective_h not in sent_hours and current_hour >= effective_h:
             target_hour = h
             break
 
@@ -910,6 +941,9 @@ def append_log(record):
 # 主流程
 # ─────────────────────────────────────────
 def main():
+    global _ai_call_count, _market_cache
+    _ai_call_count = 0
+    _market_cache = {}
     print(f"\n{'=' * 50}")
     print(f"监控启动 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
