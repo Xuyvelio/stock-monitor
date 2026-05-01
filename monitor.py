@@ -303,12 +303,15 @@ def _fetch_market_data(code):
         if len(fields) < 50:
             return None
 
-        price = float(fields[3]) if fields[3] else 0
-        prev_close = float(fields[4]) if fields[4] else 0
-        change_pct = float(fields[32]) if fields[32] else 0
-        turnover = float(fields[38]) if fields[38] else 0
-        high = float(fields[33]) if fields[33] else 0
-        low = float(fields[34]) if fields[34] else 0
+        try:
+            price = float(fields[3]) if fields[3] else 0
+            prev_close = float(fields[4]) if fields[4] else 0
+            change_pct = float(fields[32]) if fields[32] else 0
+            turnover = float(fields[38]) if fields[38] else 0
+            high = float(fields[33]) if fields[33] else 0
+            low = float(fields[34]) if fields[34] else 0
+        except (ValueError, IndexError):
+            return None
 
         # 判断是否涨停/跌停
         is_limit_up = False
@@ -484,6 +487,7 @@ def fetch_notice_content(code, name, title=""):
             capture_output=True,
         )
         if result.returncode != 0:
+            os.unlink(tmp_path)
             return ""
 
         # 3. 提取文字
@@ -650,6 +654,7 @@ def analyze(ann):
     # 正文校验：对高分公告抓取PDF，检查正文是否有负面内容
     content_verified = False
     content_text = ""
+    all_negative = []
     if score >= 7 and not negative_hits:
         content_text = fetch_notice_content(code, name, title)
         if content_text:
