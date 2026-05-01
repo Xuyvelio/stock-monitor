@@ -340,34 +340,70 @@ def get_market_data(code):
 
 
 # ─────────────────────────────────────────
-# 公告正文抓取（东财详情页）
+# 公告正文抓取（巨潮PDF）
 # ─────────────────────────────────────────
-def fetch_notice_content(code, art_code):
-    """抓取公告正文内容"""
+def fetch_notice_content(code, name):
+    """从巨潮资讯网下载PDF并提取正文"""
+    import subprocess
+    import tempfile
     try:
-        url = f"https://data.eastmoney.com/notices/detail/{code}/{art_code}.html"
+        # 1. 搜索公告，获取PDF链接（用股票代码搜索）
+        search_url = "https://www.cninfo.com.cn/new/fulltextSearch/full"
+        params = {
+            "searchkey": code,
+            "sdate": "", "edate": "",
+            "isfulltext": "false",
+            "sortName": "nothing",
+            "sortType": "desc",
+            "pageNum": 1,
+            "pageSize": 5,
+        }
         r = requests.get(
-            url,
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Referer": "https://data.eastmoney.com/",
-            },
+            search_url, params=params,
+            headers={"User-Agent": "Mozilla/5.0"},
             timeout=10,
         )
-        r.encoding = "utf-8"
-        # 提取正文 - 东财详情页用JS渲染，但有些内容在HTML里
-        import re
-        # 尝试从script标签中提取notice_content
-        match = re.search(r'notice_content["\']?\s*[:=]\s*["\'](.+?)["\']', r.text, re.DOTALL)
-        if match:
-            content = match.group(1)
-            # 清理HTML标签
-            content = re.sub(r'<[^>]+>', '', content)
-            content = content.replace('\\n', '\n').replace('\\r', '').replace('\\t', ' ')
-            return content[:2000]  # 限制长度
-        return ""
+        data = r.json()
+        announcements = data.get("announcements") or []
+
+        # 找到匹配的公告
+        pdf_url = None
+        for ann in announcements:
+            if ann.get("secCode") == code and ann.get("adjunctUrl"):
+                pdf_url = f"https://static.cninfo.com.cn/{ann['adjunctUrl']}"
+                break
+
+        if not pdf_url:
+            return ""
+
+        # 2. 用curl下载PDF（避免Python SSL问题）
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            tmp_path = f.name
+
+        result = subprocess.run(
+            ["curl", "-sk", pdf_url, "-o", tmp_path],
+            timeout=15,
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            return ""
+
+        # 3. 提取文字
+        try:
+            from PyPDF2 import PdfReader
+            reader = PdfReader(tmp_path)
+            text = ""
+            for page in reader.pages[:3]:  # 只取前3页
+                t = page.extract_text()
+                if t:
+                    text += t
+            return text[:3000]  # 限制长度
+        finally:
+            import os
+            os.unlink(tmp_path)
+
     except Exception as e:
-        print(f"[正文获取失败] {code}/{art_code}: {e}")
+        print(f"[正文获取失败] {code}: {e}")
         return ""
 
 
@@ -523,6 +559,31 @@ def analyze(ann):
     instant_only_explosive = EXPLOSIVE_CONFIG.get("instant_only_explosive", True)
     allow_watchlist_override = EXPLOSIVE_CONFIG.get("allow_watchlist_override", False)
 
+    # 正文校验：对高分公告抓取PDF，检查正文是否有负面内容
+    content_verified = False
+    if score >= 7 and not negative_hits:
+        content = fetch_notice_content(code, name)
+        if content:
+            content_verified = True
+            # 检查正文中的负面关键词
+            content_negative = hit_keywords(content, NEGATIVE_KEYWORDS)
+            # 额外检查正文特有的终止/失败模式
+            content_terminate = [kw for kw in ["终止实施", "不再继续", "予以撤回", "未获通过", "审核不通过", "已过期"] if kw in content]
+            all_negative = content_negative + content_terminate
+            if all_negative:
+                penalty = 4
+                score = max(2, score - penalty)
+                penalties.append(f"正文负面-{penalty}（{'、'.join(all_negative[:3])}）")
+                reason += f"。正文发现负面信息（{'、'.join(all_negative[:2])}），标题与内容不符，-{penalty}分"
+                event_type = "正文利空"
+            # 检查正文中的不确定性
+            content_uncertain = hit_keywords(content, ["尚需经", "能否获得", "最终结果", "存在重大不确定性"])
+            if content_uncertain and not all_negative:
+                penalty = 2
+                score = max(2, score - penalty)
+                penalties.append(f"正文不确定-{penalty}")
+                reason += f"。正文存在不确定性表述，-{penalty}分"
+
     explosive_ready = explosive_event and not procedural_hits and not uncertainty_hits and not negative_hits and not large_cap
     if instant_only_explosive:
         should_push = score >= instant_threshold and explosive_ready
@@ -571,6 +632,7 @@ def analyze(ann):
         "explosive_ready": explosive_ready,
         "market": market,
         "market_info": market_info,
+        "content_verified": content_verified,
     }
 
 
@@ -607,6 +669,8 @@ def build_tags(analysis):
         tags.append("【大盘股-连板概率低】")
     if analysis["tracks"]:
         tags.append(f"【{'|'.join(analysis['tracks'])}】")
+    if analysis.get("content_verified"):
+        tags.append("【已校验正文】")
     return " ".join(tags)
 
 
