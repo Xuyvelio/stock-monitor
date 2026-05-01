@@ -6,74 +6,148 @@ from datetime import datetime, date
 
 SERVERCHAN_KEY = os.environ.get("SERVERCHAN_KEY", "")
 STATE_FILE = "processed_ids.json"
+CONFIG_FILE = "config.json"
 
-# ─────────────────────────────────────────
-# 事件关键词（触发抓取）
-# ─────────────────────────────────────────
-KEYWORDS = [
-    # 停牌信号（最早期最强信号）
-    "筹划重大事项", "申请停牌", "重大事项停牌",
-    # 重组并购
-    "重大资产重组", "资产重组", "重组",
-    "借壳", "吸收合并", "要约收购",
-    "收购", "并购", "股权收购",
-    # 控制权转让
-    "控制权变更", "实际控制人",
-    "股份转让", "股权转让",
-    # 国资入主
-    "国资入主", "国有资本", "国有企业",
-    # ST摘帽
-    "摘帽", "取消退市风险警示",
-    # 融资投资
-    "重大合同", "重大投资", "增资",
-    "定向增发", "非公开发行",
-    # 资本运作
-    "分拆上市",
-    "股票回购",
-    # 业绩
-    "业绩预增", "业绩大幅增长",
-]
-
-# ─────────────────────────────────────────
-# 噪音过滤黑名单（标题含这些词直接跳过）
-# ─────────────────────────────────────────
-BLACKLIST = [
-    "进展公告", "进展情况",
-    "修订说明", "修订报告",
-    "补充公告",
-    "回复函", "问询函", "回复意见",
-    "核查意见", "核查报告",
-    "注册稿",
-    "独立董事意见", "独立董事关于",
-    "草案摘要", "报告书摘要",
-    "说明书（",
-    "第三次", "第四次", "第五次",
-]
-
-# ─────────────────────────────────────────
-# 主线赛道关键词
-# ─────────────────────────────────────────
-HOTTRACK_KEYWORDS = {
-    "AI人工智能": ["人工智能", "大模型", "AI", "算力", "智算", "大数据", "云计算"],
-    "半导体芯片": ["半导体", "芯片", "集成电路", "晶圆", "光刻", "EDA", "封测"],
-    "机器人":     ["机器人", "人形机器人", "具身智能", "智能制造"],
-    "低空经济":   ["低空", "无人机", "eVTOL", "飞行汽车", "通用航空"],
-    "新能源":     ["新能源", "锂电池", "储能", "光伏", "风电", "氢能", "固态电池"],
-    "军工":       ["军工", "国防", "航天", "航空", "兵器", "舰船", "卫星", "导弹"],
-    "创新药":     ["创新药", "生物医药", "基因", "细胞治疗", "新药", "CXO"],
-    "量子/卫星":  ["量子", "卫星互联网", "商业航天", "北斗"],
+DEFAULT_CONFIG = {
+    "thresholds": {
+        "min_score": 6,
+        "instant_score": 9,
+        "summary_score": 6,
+        "watchlist_min_score": 4,
+        "large_cap_penalty": 3,
+        "preferred_track_bonus": 1,
+        "watchlist_bonus": 2,
+    },
+    "watchlist": {"codes": [], "names": []},
+    "ignore": {"codes": [], "names": [], "keywords": []},
+    "preferred_tracks": [],
+    "summary": {"enabled": True, "send_hours": [18, 24]},
+    "logging": {"enabled": True, "file": "daily_log.jsonl"},
+    "explosive": {
+        "instant_only_explosive": True,
+        "min_score": 9,
+        "allow_watchlist_override": False,
+        "summary_min_score": 7
+    },
+    "keywords": [
+        "筹划重大事项", "申请停牌", "重大事项停牌",
+        "重大资产重组", "资产重组", "重组",
+        "借壳", "吸收合并", "要约收购",
+        "收购", "并购", "股权收购",
+        "控制权变更", "实际控制人",
+        "股份转让", "股权转让",
+        "国资入主", "国有资本", "国有企业",
+        "摘帽", "取消退市风险警示",
+        "重大合同", "重大投资", "增资",
+        "定向增发", "非公开发行",
+        "分拆上市", "股票回购",
+        "业绩预增", "业绩大幅增长",
+    ],
+    "blacklist": [
+        "进展公告", "进展情况",
+        "修订说明", "修订报告",
+        "补充公告",
+        "回复函", "问询函", "回复意见",
+        "核查意见", "核查报告",
+        "注册稿",
+        "独立董事意见", "独立董事关于",
+        "草案摘要", "报告书摘要",
+        "说明书（",
+        "第三次", "第四次", "第五次",
+    ],
+    "procedural_keywords": [
+        "审议通过", "董事会", "监事会", "股东大会",
+        "提示性公告", "风险提示", "进展",
+        "完成工商变更", "签署补充协议", "补充说明",
+        "交易所关注", "问询回复",
+    ],
+    "uncertainty_keywords": [
+        "存在不确定性", "尚需", "尚存在", "最终以",
+        "能否", "审批", "审议", "备案", "有待", "视情况",
+    ],
+    "negative_keywords": [
+        "终止", "撤回", "失败", "取消", "无法", "未通过", "不再推进",
+    ],
+    "explosive_event_keywords": [
+        "筹划重大事项", "申请停牌", "重大事项停牌",
+        "要约收购",
+        "重大资产重组", "借壳", "吸收合并",
+        "控制权变更", "实际控制人变更",
+        "国资入主", "国有资本入主",
+        "摘帽", "取消退市风险警示"
+    ],
+    "hard_filter_keywords": [
+        "董事会决议", "监事会决议", "股东大会决议",
+        "提示性公告", "风险提示",
+        "进展公告", "进展情况",
+        "补充公告", "补充说明", "补充更正",
+        "回复函", "问询函", "回复意见", "问询回复",
+        "实施完成", "完成工商变更",
+        "继续停牌"
+    ],
+    "hottrack_keywords": {
+        "AI人工智能": ["人工智能", "大模型", "AI", "算力", "智算", "大数据", "云计算"],
+        "半导体芯片": ["半导体", "芯片", "集成电路", "晶圆", "光刻", "EDA", "封测"],
+        "机器人": ["机器人", "人形机器人", "具身智能", "智能制造"],
+        "低空经济": ["低空", "无人机", "eVTOL", "飞行汽车", "通用航空"],
+        "新能源": ["新能源", "锂电池", "储能", "光伏", "风电", "氢能", "固态电池"],
+        "军工": ["军工", "国防", "航天", "航空", "兵器", "舰船", "卫星", "导弹"],
+        "创新药": ["创新药", "生物医药", "基因", "细胞治疗", "新药", "CXO"],
+        "量子/卫星": ["量子", "卫星互联网", "商业航天", "北斗"],
+    },
+    "large_caps": [
+        "中国神华", "中国电建", "中国建筑", "中国中铁", "中国铁建",
+        "工商银行", "建设银行", "农业银行", "中国银行", "招商银行",
+        "中国石油", "中国石化", "中国海油", "中国移动", "中国联通",
+        "中国电信", "中国人寿", "中国平安", "贵州茅台", "中国中车",
+        "中国煤炭", "中国交建", "中国核电", "中国广核", "华能国际",
+    ],
 }
 
-# ─────────────────────────────────────────
-# 大盘央企黑名单（连板概率极低）
-# ─────────────────────────────────────────
-LARGE_CAPS = [
-    "中国神华", "中国电建", "中国建筑", "中国中铁", "中国铁建",
-    "工商银行", "建设银行", "农业银行", "中国银行", "招商银行",
-    "中国石油", "中国石化", "中国海油", "中国移动", "中国联通",
-    "中国电信", "中国人寿", "中国平安", "贵州茅台", "中国中车",
-    "中国煤炭", "中国交建", "中国核电", "中国广核", "华能国际",
-]
+
+def deep_merge(base, override):
+    result = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def load_config():
+    try:
+        with open(CONFIG_FILE, encoding="utf-8") as f:
+            user_config = json.load(f)
+        return deep_merge(DEFAULT_CONFIG, user_config)
+    except FileNotFoundError:
+        return DEFAULT_CONFIG
+    except Exception as e:
+        print(f"[配置加载失败] 使用默认配置: {e}")
+        return DEFAULT_CONFIG
+
+
+CONFIG = load_config()
+THRESHOLDS = CONFIG["thresholds"]
+KEYWORDS = CONFIG["keywords"]
+BLACKLIST = CONFIG["blacklist"]
+EXPLOSIVE_CONFIG = CONFIG.get("explosive", {})
+EXPLOSIVE_EVENT_KEYWORDS = CONFIG.get("explosive_event_keywords", [])
+HARD_FILTER_KEYWORDS = CONFIG.get("hard_filter_keywords", [])
+PROCEDURAL_KEYWORDS = CONFIG.get("procedural_keywords", [])
+UNCERTAINTY_KEYWORDS = CONFIG.get("uncertainty_keywords", [])
+NEGATIVE_KEYWORDS = CONFIG.get("negative_keywords", [])
+HOTTRACK_KEYWORDS = CONFIG["hottrack_keywords"]
+LARGE_CAPS = CONFIG["large_caps"]
+WATCHLIST_CODES = set(CONFIG["watchlist"].get("codes", []))
+WATCHLIST_NAMES = set(CONFIG["watchlist"].get("names", []))
+IGNORE_CODES = set(CONFIG["ignore"].get("codes", []))
+IGNORE_NAMES = set(CONFIG["ignore"].get("names", []))
+IGNORE_KEYWORDS = CONFIG["ignore"].get("keywords", [])
+PREFERRED_TRACKS = set(CONFIG.get("preferred_tracks", []))
+SUMMARY_CONFIG = CONFIG.get("summary", {})
+LOGGING_CONFIG = CONFIG.get("logging", {})
+
 
 # ─────────────────────────────────────────
 # 动态抓取页数（根据时间段）
@@ -81,11 +155,12 @@ LARGE_CAPS = [
 def get_pages():
     hour = datetime.now().hour
     if 15 <= hour < 20:
-        return 6    # 盘后高峰300条
+        return 6
     elif 9 <= hour < 15:
-        return 2    # 交易时间100条
+        return 2
     else:
-        return 3    # 其他时间150条
+        return 3
+
 
 # ─────────────────────────────────────────
 # 抓取公告
@@ -100,9 +175,13 @@ def fetch_announcements():
     pages = get_pages()
     for page in range(1, pages + 1):
         params = {
-            "sr": -1, "page_size": 50, "page_index": page,
-            "ann_type": "A", "client_source": "web",
-            "f_node": 0, "s_node": 0,
+            "sr": -1,
+            "page_size": 50,
+            "page_index": page,
+            "ann_type": "A",
+            "client_source": "web",
+            "f_node": 0,
+            "s_node": 0,
         }
         try:
             r = requests.get(url, params=params, headers=headers, timeout=15)
@@ -119,15 +198,16 @@ def fetch_announcements():
     for item in all_items:
         code = item.get("codes", [{}])[0].get("stock_code", "") if item.get("codes") else ""
         announcements.append({
-            "id":         str(item.get("art_code", "")),
+            "id": str(item.get("art_code", "")),
             "stock_code": code,
             "stock_name": item.get("codes", [{}])[0].get("short_name", "") if item.get("codes") else "",
-            "title":      item.get("title", ""),
-            "time":       item.get("notice_date", ""),
-            "url":        f"https://data.eastmoney.com/notices/detail/{code}/{item.get('art_code','')}.html",
+            "title": item.get("title", ""),
+            "time": item.get("notice_date", ""),
+            "url": f"https://data.eastmoney.com/notices/detail/{code}/{item.get('art_code', '')}.html",
         })
     print(f"共抓取 {len(announcements)} 条（{pages}页）")
     return announcements
+
 
 # ─────────────────────────────────────────
 # 过滤函数
@@ -135,11 +215,32 @@ def fetch_announcements():
 def is_bond(code):
     return code.startswith("11") or code.startswith("12")
 
+
 def is_noise(title):
-    return any(kw in title for kw in BLACKLIST)
+    return any(kw in title for kw in BLACKLIST + IGNORE_KEYWORDS)
+
+
+def is_hard_filtered(title):
+    return any(kw in title for kw in HARD_FILTER_KEYWORDS)
+
 
 def is_major(title):
     return any(kw in title for kw in KEYWORDS)
+
+
+def is_explosive_event(title):
+    return any(kw in title for kw in EXPLOSIVE_EVENT_KEYWORDS)
+
+
+def is_watchlist(code, name):
+    return code in WATCHLIST_CODES or name in WATCHLIST_NAMES
+
+
+def is_ignored(code, name, title):
+    if code in IGNORE_CODES or name in IGNORE_NAMES:
+        return True
+    return any(kw in title for kw in IGNORE_KEYWORDS)
+
 
 def get_stock_type(code, name):
     is_st = "ST" in name
@@ -153,197 +254,521 @@ def get_stock_type(code, name):
         limit = "5%涨停" if is_st else "10%涨停"
         return "主板", limit, False, is_st
 
+
 def is_large_cap(name):
     return any(lc in name for lc in LARGE_CAPS)
+
 
 def get_hottrack(ann):
     text = ann["stock_name"] + ann["title"]
     return [t for t, kws in HOTTRACK_KEYWORDS.items() if any(kw in text for kw in kws)]
+
+
+def hit_keywords(text, keywords):
+    return [kw for kw in keywords if kw in text]
+
+
+# ─────────────────────────────────────────
+# 行情数据（腾讯接口）
+# ─────────────────────────────────────────
+def get_market_data(code):
+    """获取股票实时行情数据"""
+    # 腾讯行情接口: 0=深圳 1=上海
+    if code.startswith("6"):
+        symbol = f"sh{code}"
+    else:
+        symbol = f"sz{code}"
+
+    try:
+        r = requests.get(
+            f"https://qt.gtimg.cn/q={symbol}",
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=5,
+        )
+        text = r.text
+        if "=" not in text or "~" not in text:
+            return None
+
+        fields = text.split("~")
+        if len(fields) < 50:
+            return None
+
+        price = float(fields[3]) if fields[3] else 0
+        prev_close = float(fields[4]) if fields[4] else 0
+        change_pct = float(fields[32]) if fields[32] else 0
+        turnover = float(fields[38]) if fields[38] else 0
+        high = float(fields[33]) if fields[33] else 0
+        low = float(fields[34]) if fields[34] else 0
+
+        # 判断是否涨停/跌停
+        is_limit_up = False
+        is_limit_down = False
+        if prev_close > 0:
+            # 根据板块确定涨跌停幅度
+            if code.startswith("300") or code.startswith("301") or code.startswith("688") or code.startswith("689"):
+                limit_pct = 20
+            elif code.startswith("8") or code.startswith("43"):
+                limit_pct = 30
+            elif "ST" in fields[1]:
+                limit_pct = 5
+            else:
+                limit_pct = 10
+
+            limit_up_price = round(prev_close * (1 + limit_pct / 100), 2)
+            limit_down_price = round(prev_close * (1 - limit_pct / 100), 2)
+
+            if price >= limit_up_price:
+                is_limit_up = True
+            if price <= limit_down_price:
+                is_limit_down = True
+
+        return {
+            "price": price,
+            "prev_close": prev_close,
+            "change_pct": change_pct,
+            "turnover": turnover,
+            "high": high,
+            "low": low,
+            "is_limit_up": is_limit_up,
+            "is_limit_down": is_limit_down,
+            "volume": int(fields[6]) if fields[6] else 0,
+            "amount": float(fields[37]) if fields[37] else 0,  # 万元
+        }
+    except Exception as e:
+        print(f"[行情获取失败] {code}: {e}")
+        return None
+
+
+# ─────────────────────────────────────────
+# 公告正文抓取（东财详情页）
+# ─────────────────────────────────────────
+def fetch_notice_content(code, art_code):
+    """抓取公告正文内容"""
+    try:
+        url = f"https://data.eastmoney.com/notices/detail/{code}/{art_code}.html"
+        r = requests.get(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Referer": "https://data.eastmoney.com/",
+            },
+            timeout=10,
+        )
+        r.encoding = "utf-8"
+        # 提取正文 - 东财详情页用JS渲染，但有些内容在HTML里
+        import re
+        # 尝试从script标签中提取notice_content
+        match = re.search(r'notice_content["\']?\s*[:=]\s*["\'](.+?)["\']', r.text, re.DOTALL)
+        if match:
+            content = match.group(1)
+            # 清理HTML标签
+            content = re.sub(r'<[^>]+>', '', content)
+            content = content.replace('\\n', '\n').replace('\\r', '').replace('\\t', ' ')
+            return content[:2000]  # 限制长度
+        return ""
+    except Exception as e:
+        print(f"[正文获取失败] {code}/{art_code}: {e}")
+        return ""
+
 
 # ─────────────────────────────────────────
 # 评分与分析
 # ─────────────────────────────────────────
 def analyze(ann):
     title = ann["title"]
-    name  = ann["stock_name"]
-    code  = ann["stock_code"]
+    name = ann["stock_name"]
+    code = ann["stock_code"]
     board, limit, need_perm, is_st = get_stock_type(code, name)
     large_cap = is_large_cap(name)
+    watchlist = is_watchlist(code, name)
+    explosive_event = is_explosive_event(title)
+    procedural_hits = hit_keywords(title, PROCEDURAL_KEYWORDS)
+    uncertainty_hits = hit_keywords(title, UNCERTAINTY_KEYWORDS)
+    negative_hits = hit_keywords(title, NEGATIVE_KEYWORDS)
 
     score = 6
-    event_type = "重大事件"
-    reason = "命中重大事件关键词"
+    base_score = 6
+    bonuses = []
+    penalties = []
 
     if any(kw in title for kw in ["筹划重大事项", "申请停牌", "重大事项停牌"]):
-        score, event_type = 10, "筹划重大事项停牌"
+        score, base_score, event_type = 10, 10, "筹划重大事项停牌"
         reason = "信息完全空白，市场自由想象，复牌首日历史上大概率一字涨停"
-
     elif "要约收购" in title:
-        score, event_type = 10, "要约收购"
+        score, base_score, event_type = 10, 10, "要约收购"
         reason = "收购方溢价收购，目标价锁定，资金疯狂追入，连板概率极高"
-
     elif any(kw in title for kw in ["摘帽", "取消退市风险警示"]):
-        score, event_type = 10, "ST摘帽"
+        score, base_score, event_type = 10, 10, "ST摘帽"
         reason = "从5%变10%涨停，利好明确，历史上摘帽首日几乎必连板"
-
     elif any(kw in title for kw in ["重大资产重组", "借壳", "吸收合并"]):
-        score, event_type = 9, "重大资产重组/借壳"
+        score, base_score, event_type = 9, 9, "重大资产重组/借壳"
         reason = "资产注入或借壳，估值重构，市场高度关注，连续涨停概率大"
-
     elif any(kw in title for kw in ["国资入主", "国有资本", "国有企业"]):
-        score, event_type = 9, "国资入主"
+        score, base_score, event_type = 9, 9, "国资入主"
         reason = "国有资本接盘，信用背书强，市场认可度高，历史上多为连板起点"
-
     elif any(kw in title for kw in ["控制权变更", "股份转让", "股权转让", "实际控制人"]):
-        score, event_type = 8, "控制权/股权转让"
+        score, base_score, event_type = 8, 8, "控制权/股权转让"
         reason = "控制权易主，公司发展方向可能根本性改变，资本市场高度敏感"
-
     elif any(kw in title for kw in ["收购", "并购", "股权收购"]):
-        score, event_type = 8, "收购/并购"
+        score, base_score, event_type = 8, 8, "收购/并购"
         reason = "收购并购事件，可能带来估值重塑和业务协同"
-
     elif "分拆上市" in title:
-        score, event_type = 8, "分拆上市"
+        score, base_score, event_type = 8, 8, "分拆上市"
         reason = "子公司独立上市，释放隐藏价值，母公司估值重塑"
-
     elif any(kw in title for kw in ["重大合同", "重大投资"]):
-        score, event_type = 7, "重大合同/投资"
+        score, base_score, event_type = 7, 7, "重大合同/投资"
         reason = "重大合同落地，业绩有望大幅提升"
-
     elif any(kw in title for kw in ["业绩预增", "业绩大幅增长"]):
-        score, event_type = 7, "业绩预增"
+        score, base_score, event_type = 7, 7, "业绩预增"
         reason = "业绩超预期增长，基本面改善明显"
-
     elif any(kw in title for kw in ["定向增发", "非公开发行"]):
-        score, event_type = 7, "定向增发"
+        score, base_score, event_type = 7, 7, "定向增发"
         reason = "定向增发引入资金或战略投资者"
-
     elif "股票回购" in title:
-        score, event_type = 7, "股票回购"
+        score, base_score, event_type = 7, 7, "股票回购"
         reason = "大额回购彰显信心，护盘意图明显"
+    else:
+        # 自选股公告但未命中任何重大事件关键词
+        event_type = "自选股公告"
+        reason = "自选股公告，未命中重大事件关键词，关注后续进展"
 
-    # ST加分
+    if explosive_event:
+        bonuses.append("爆发型事件")
+
     if is_st and score < 10:
         score = min(10, score + 1)
+        bonuses.append("ST股+1")
         reason += "。ST股体量小，资金容易拉升"
 
-    # 主线赛道加分
     tracks = get_hottrack(ann)
     if tracks:
         bonus = 1 if len(tracks) == 1 else 2
         score = min(10, score + bonus)
+        bonuses.append(f"主线赛道+{bonus}（{'、'.join(tracks)}）")
         reason += f"。主线赛道（{'、'.join(tracks)}）+{bonus}分"
 
-    # 大盘股降分
+    preferred_tracks = [track for track in tracks if track in PREFERRED_TRACKS]
+    if preferred_tracks:
+        bonus = THRESHOLDS.get("preferred_track_bonus", 1)
+        score = min(10, score + bonus)
+        bonuses.append(f"偏好赛道+{bonus}（{'、'.join(preferred_tracks)}）")
+        reason += f"。命中个人偏好赛道（{'、'.join(preferred_tracks)}）+{bonus}分"
+
+    if watchlist:
+        bonus = THRESHOLDS.get("watchlist_bonus", 2)
+        score = min(10, score + bonus)
+        bonuses.append(f"自选股+{bonus}")
+        reason += f"。命中自选股 +{bonus}分"
+
     if large_cap:
-        score = max(3, score - 3)
+        penalty = THRESHOLDS.get("large_cap_penalty", 3)
+        score = max(3, score - penalty)
+        penalties.append(f"大盘股-{penalty}")
         reason += "。大盘央企体量大，连板概率极低"
 
-    # 负面词降分
-    if any(kw in title for kw in ["终止", "撤回", "失败", "取消", "无法"]):
-        score = max(2, score - 5)
-        event_type = "事项终止"
-        reason = "重大事项终止或撤回，可能构成利空，注意风险"
-        tracks = []
+    if procedural_hits:
+        penalty = THRESHOLDS.get("procedural_penalty", 2)
+        score = max(2, score - penalty)
+        penalties.append(f"流程性公告-{penalty}（{'、'.join(procedural_hits[:3])}）")
+        reason += f"。标题偏流程推进，落地强度一般，-{penalty}分"
 
-    # 利好等级
-    if score == 10:
-        level, burst = "🌋 核爆利好", "极高"
-    elif score >= 9:
-        level, burst = "🔥 重大利好", "高"
-    elif score >= 8:
-        level, burst = "⭐ 明显利好", "中高"
-    elif score >= 6:
-        level, burst = "📢 值得关注", "中"
+    if uncertainty_hits:
+        penalty = THRESHOLDS.get("uncertainty_penalty", 2)
+        score = max(2, score - penalty)
+        penalties.append(f"不确定性-{penalty}（{'、'.join(uncertainty_hits[:3])}）")
+        reason += f"。存在审批或结果不确定性，-{penalty}分"
+
+    if negative_hits:
+        penalty = THRESHOLDS.get("negative_penalty", 5)
+        score = max(2, score - penalty)
+        event_type = "事项终止/利空"
+        penalties.append(f"负面事件-{penalty}（{'、'.join(negative_hits[:3])}）")
+        reason = "重大事项终止、撤回或推进失败，可能构成明显利空，注意风险"
+        tracks = []
+        preferred_tracks = []
+
+    # 获取行情数据
+    market = get_market_data(code)
+    market_info = ""
+    if market:
+        market_info = f"现价{market['price']} 涨跌{market['change_pct']}% 换手{market['turnover']}%"
+        # 已涨停 - 可能买不进了
+        if market["is_limit_up"]:
+            penalty = 2
+            score = max(2, score - penalty)
+            penalties.append(f"已涨停-{penalty}")
+            reason += f"。该股已涨停（{market['price']}），可能封板买不进"
+        # 已跌停 - 利空兑现
+        elif market["is_limit_down"]:
+            penalty = 3
+            score = max(2, score - penalty)
+            penalties.append(f"已跌停-{penalty}")
+            reason += f"。该股已跌停（{market['price']}），利空可能已兑现"
+        # 涨幅超过5% - 追高风险
+        elif market["change_pct"] > 5:
+            penalty = 1
+            score = max(2, score - penalty)
+            penalties.append(f"已涨{market['change_pct']:.1f}%-{penalty}")
+            reason += f"。盘中已涨{market['change_pct']:.1f}%，追高有风险"
+        # 换手率极高（>15%）- 筹码松动
+        if market["turnover"] > 15:
+            penalty = 1
+            score = max(2, score - penalty)
+            penalties.append(f"换手率{market['turnover']:.1f}%-{penalty}")
+            reason += f"。换手率{market['turnover']:.1f}%，筹码松动"
+
+    instant_threshold = EXPLOSIVE_CONFIG.get("min_score", THRESHOLDS.get("instant_score", 9))
+    min_threshold = THRESHOLDS.get("min_score", 6)
+    summary_threshold = EXPLOSIVE_CONFIG.get("summary_min_score", THRESHOLDS.get("summary_score", min_threshold))
+    instant_only_explosive = EXPLOSIVE_CONFIG.get("instant_only_explosive", True)
+    allow_watchlist_override = EXPLOSIVE_CONFIG.get("allow_watchlist_override", False)
+
+    explosive_ready = explosive_event and not procedural_hits and not uncertainty_hits and not negative_hits and not large_cap
+    if instant_only_explosive:
+        should_push = score >= instant_threshold and explosive_ready
     else:
-        level, burst = "⚠️ 谨慎关注", "低"
+        should_push = score >= instant_threshold and not negative_hits and not large_cap
+    if allow_watchlist_override and watchlist and score >= THRESHOLDS.get("watchlist_min_score", 4):
+        should_push = True
+    should_summary = score >= summary_threshold and not negative_hits
+
+    if score == 10:
+        level, burst, alert_tier = "🌋 核爆利好", "极高", "S"
+    elif score >= 9:
+        level, burst, alert_tier = "🔥 重大利好", "高", "S"
+    elif score >= 7:
+        level, burst, alert_tier = "⭐ 值得看", "中高", "A"
+    elif score >= 6:
+        level, burst, alert_tier = "📢 收盘看", "中", "B"
+    else:
+        level, burst, alert_tier = "⚠️ 谨慎关注", "低", "C"
 
     return {
-        "is_positive": score >= 6,
-        "score": score, "level": level, "burst": burst,
-        "event_type": event_type, "reason": reason,
-        "tracks": tracks, "board": board, "limit": limit,
-        "need_perm": need_perm, "is_st": is_st, "large_cap": large_cap,
+        "is_positive": score >= min_threshold,
+        "should_push": should_push,
+        "should_summary": should_summary,
+        "score": score,
+        "base_score": base_score,
+        "level": level,
+        "burst": burst,
+        "alert_tier": alert_tier,
+        "event_type": event_type,
+        "reason": reason,
+        "tracks": tracks,
+        "preferred_tracks": preferred_tracks,
+        "board": board,
+        "limit": limit,
+        "need_perm": need_perm,
+        "is_st": is_st,
+        "large_cap": large_cap,
+        "watchlist": watchlist,
+        "bonuses": bonuses,
+        "penalties": penalties,
+        "procedural_hits": procedural_hits,
+        "uncertainty_hits": uncertainty_hits,
+        "negative_hits": negative_hits,
+        "explosive_event": explosive_event,
+        "explosive_ready": explosive_ready,
+        "market": market,
+        "market_info": market_info,
     }
+
 
 # ─────────────────────────────────────────
 # 推送微信
 # ─────────────────────────────────────────
-def push(ann, analysis):
+def push_text(title, content):
     if not SERVERCHAN_KEY:
-        return
-    score = analysis["score"]
-    if not analysis["is_positive"] or score < 6:
-        print(f"[过滤] {ann['title']} 评分{score}")
-        return
-
-    tracks    = analysis["tracks"]
-    is_st     = analysis["is_st"]
-    need_perm = analysis["need_perm"]
-    large_cap = analysis["large_cap"]
-
-    tags = []
-    if is_st:       tags.append("【ST-5%涨停】")
-    if need_perm:   tags.append("【需开通权限】")
-    if large_cap:   tags.append("【大盘股-连板概率低】")
-    if tracks:      tags.append(f"【{'|'.join(tracks)}】")
-    tag_str = " ".join(tags) if tags else ""
-
-    if score == 10:
-        msg_title = f"🌋 {ann['stock_name']}（{ann['stock_code']}）核爆公告"
-    elif tracks:
-        msg_title = f"🚀 【主线】{ann['stock_name']}（{ann['stock_code']}）重大公告"
-    else:
-        msg_title = f"🔔 {ann['stock_name']}（{ann['stock_code']}）重大公告"
-
-    stars = "⭐" * min(score, 10)
-    content = (
-        f"## {ann['title']}\n\n"
-        + (f"{tag_str}\n\n" if tag_str else "")
-        + f"**🕐 时间：** {ann['time']}\n"
-        f"**📈 板块：** {analysis['board']} | 涨停幅度：{analysis['limit']}\n\n"
-        f"---\n\n"
-        f"| 项目 | 内容 |\n|------|------|\n"
-        f"| 利好等级 | {analysis['level']} |\n"
-        f"| 综合评分 | {stars} {score}/10 |\n"
-        f"| 事件类型 | {analysis['event_type']} |\n"
-        f"| 主线赛道 | {'、'.join(tracks) if tracks else '—'} |\n"
-        f"| 爆发概率 | {analysis['burst']} |\n"
-        f"| 核心逻辑 | {analysis['reason']} |\n\n"
-        f"---\n\n"
-        f"⚠️ 以上为规则分析，仅供参考，不构成投资建议\n\n"
-        f"🔗 [查看原文公告]({ann['url']})"
-    )
+        return False
     try:
         r = requests.post(
             f"https://sctapi.ftqq.com/{SERVERCHAN_KEY}.send",
-            data={"title": msg_title, "desp": content},
-            timeout=10
+            data={"title": title, "desp": content},
+            timeout=10,
         )
-        print(f"[推送] {msg_title} → code:{r.json().get('code')}")
+        print(f"[推送] {title} → code:{r.json().get('code')}")
+        return True
     except Exception as e:
         print(f"[推送失败] {e}")
+        return False
+
+
+def build_tags(analysis):
+    tags = []
+    if analysis["watchlist"]:
+        tags.append("【自选】")
+    if analysis.get("explosive_event"):
+        tags.append("【爆发型】")
+    if analysis["is_st"]:
+        tags.append("【ST-5%涨停】")
+    if analysis["need_perm"]:
+        tags.append("【需开通权限】")
+    if analysis["large_cap"]:
+        tags.append("【大盘股-连板概率低】")
+    if analysis["tracks"]:
+        tags.append(f"【{'|'.join(analysis['tracks'])}】")
+    return " ".join(tags)
+
+
+def push_instant(ann, analysis):
+    if not analysis["should_push"]:
+        return False
+
+    tier = analysis["alert_tier"]
+    prefix = "🌋" if tier == "S" else "🔔"
+    tag = "【立即看】" if tier == "S" else "【关注】"
+    msg_title = f"{prefix} {tag}{ann['stock_name']}（{ann['stock_code']}）{analysis['event_type']}"
+
+    score = analysis["score"]
+    stars = "⭐" * min(score, 10)
+    bonus_text = "、".join(analysis["bonuses"]) if analysis["bonuses"] else "—"
+    penalty_text = "、".join(analysis["penalties"]) if analysis["penalties"] else "—"
+    tag_str = build_tags(analysis)
+
+    content = (
+        f"## {ann['title']}\n\n"
+        + (f"{tag_str}\n\n" if tag_str else "")
+        + f"**提醒级别：** {analysis['alert_tier']} / {analysis['level']}\n"
+        f"**时间：** {ann['time']}\n"
+        f"**板块：** {analysis['board']} | 涨停幅度：{analysis['limit']}\n"
+        + (f"**行情：** {analysis['market_info']}\n" if analysis.get('market_info') else "")
+        + f"\n| 项目 | 内容 |\n|------|------|\n"
+        f"| 事件类型 | {analysis['event_type']} |\n"
+        f"| 最终评分 | {stars} {score}/10 |\n"
+        f"| 基础分 | {analysis['base_score']} |\n"
+        f"| 加分项 | {bonus_text} |\n"
+        f"| 减分项 | {penalty_text} |\n"
+        f"| 主线赛道 | {'、'.join(analysis['tracks']) if analysis['tracks'] else '—'} |\n"
+        f"| 爆发概率 | {analysis['burst']} |\n"
+        f"| 核心逻辑 | {analysis['reason']} |\n\n"
+        f"⚠️ 仅供自用参考，不构成投资建议\n\n"
+        f"🔗 [查看原文公告]({ann['url']})"
+    )
+    return push_text(msg_title, content)
+
+
+def push_summary(candidates, state):
+    if not SERVERCHAN_KEY or not SUMMARY_CONFIG.get("enabled", True):
+        return False
+
+    now = datetime.now()
+    current_hour = now.hour
+    send_hours = sorted(SUMMARY_CONFIG.get("send_hours", [18, 24]))
+
+    today = str(date.today())
+    summary_state = state.get("summary", {})
+
+    # 新的一天重置状态
+    if summary_state.get("date") != today:
+        summary_state = {"date": today, "sent_hours": [], "pushed_ids": []}
+
+    sent_hours = summary_state.get("sent_hours", [])
+
+    # 找到下一个还没推过、且当前时间已过的推送时间点
+    target_hour = None
+    for h in send_hours:
+        if h not in sent_hours and current_hour >= h:
+            target_hour = h
+            break
+
+    if target_hour is None:
+        return False
+
+    # 过滤掉已经推过的公告
+    pushed_ids = set(summary_state.get("pushed_ids", []))
+    summary_items = [
+        (ann, result) for ann, result in candidates
+        if result["should_summary"] and ann["id"] not in pushed_ids
+    ]
+
+    if not summary_items:
+        state["summary"] = {
+            "date": today,
+            "sent_hours": sent_hours + [target_hour],
+            "pushed_ids": list(pushed_ids)
+        }
+        return False
+
+    summary_items.sort(key=lambda item: item[1]["score"], reverse=True)
+    top_items = summary_items[:10]
+
+    time_label = "盘后" if target_hour <= 18 else "晚间"
+    lines = []
+    for ann, result in top_items:
+        flags = []
+        if result["watchlist"]:
+            flags.append("自选")
+        if result["tracks"]:
+            flags.append("/".join(result["tracks"]))
+        flag_text = f"（{'；'.join(flags)}）" if flags else ""
+        market_str = ""
+        if result.get("market_info"):
+            market_str = f" | {result['market_info']}"
+        lines.append(
+            f"- {ann['stock_name']}（{ann['stock_code']}） {result['score']}/10 {result['event_type']}{flag_text}{market_str}"
+        )
+
+    title = f"📒 {time_label}公告汇总 {today}"
+    content = (
+        f"## {time_label}重点公告汇总\n\n"
+        f"- 新增候选：{len(summary_items)} 条\n"
+        f"- 立即看级别：{sum(1 for _, r in summary_items if r['alert_tier'] == 'S')} 条\n\n"
+        f"### Top 列表\n"
+        + "\n".join(lines)
+        + "\n\n⚠️ 仅供自用复盘参考，不构成投资建议"
+    )
+
+    ok = push_text(title, content)
+    if ok:
+        new_pushed_ids = list(pushed_ids | {ann["id"] for ann, _ in summary_items})
+        state["summary"] = {
+            "date": today,
+            "sent_hours": sent_hours + [target_hour],
+            "pushed_ids": new_pushed_ids[-500:]
+        }
+    return ok
+
 
 # ─────────────────────────────────────────
 # 状态管理
 # ─────────────────────────────────────────
 def load_state():
     try:
-        with open(STATE_FILE) as f:
-            return json.load(f)
-    except:
-        return {"ids": [], "daily": {}}
+        with open(STATE_FILE, encoding="utf-8") as f:
+            state = json.load(f)
+            state.setdefault("ids", [])
+            state.setdefault("daily", {})
+            state.setdefault("summary", {})
+            return state
+    except FileNotFoundError:
+        return {"ids": [], "daily": {}, "summary": {}}
+    except Exception as e:
+        print(f"[状态加载失败] 重置状态: {e}")
+        return {"ids": [], "daily": {}, "summary": {}}
+
 
 def save_state(state):
     state["ids"] = list(state["ids"])[-2000:]
-    with open(STATE_FILE, "w") as f:
-        json.dump(state, f, ensure_ascii=False)
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+def append_log(record):
+    if not LOGGING_CONFIG.get("enabled", False):
+        return
+    log_file = LOGGING_CONFIG.get("file", "daily_log.jsonl")
+    try:
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception as e:
+        print(f"[日志写入失败] {e}")
+
 
 # ─────────────────────────────────────────
 # 主流程
 # ─────────────────────────────────────────
 def main():
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"监控启动 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     state = load_state()
@@ -356,50 +781,92 @@ def main():
 
     anns = fetch_announcements()
     candidates = []
+    stats = {"seen": len(anns), "processed": 0, "ignored": 0, "noise": 0, "non_major": 0, "bond": 0}
 
     for ann in anns:
         ann_id = ann["id"]
-        code   = ann["stock_code"]
+        code = ann["stock_code"]
+        name = ann["stock_name"]
+        title = ann["title"]
 
         if ann_id in processed_ids:
             continue
+        stats["processed"] += 1
+
         if is_bond(code):
             processed_ids.add(ann_id)
+            stats["bond"] += 1
             continue
-        if is_noise(ann["title"]):
+        if is_ignored(code, name, title):
             processed_ids.add(ann_id)
+            stats["ignored"] += 1
             continue
-        if not is_major(ann["title"]):
+        if is_hard_filtered(title):
             processed_ids.add(ann_id)
+            stats["noise"] += 1
+            continue
+        if is_noise(title):
+            processed_ids.add(ann_id)
+            stats["noise"] += 1
+            continue
+        if not (is_major(title) or is_watchlist(code, name)):
+            processed_ids.add(ann_id)
+            stats["non_major"] += 1
             continue
 
-        print(f"[命中] {ann['stock_name']}（{code}）- {ann['title']}")
+        print(f"[命中] {ann['stock_name']}（{code}）- {title}")
         result = analyze(ann)
         print(f"  → {result['level']} {result['score']}/10 | {result['event_type']}")
+        append_log({
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "stock_code": code,
+            "stock_name": name,
+            "title": title,
+            "announcement_id": ann_id,
+            "score": result["score"],
+            "event_type": result["event_type"],
+            "should_push": result["should_push"],
+            "should_summary": result["should_summary"],
+            "bonuses": result["bonuses"],
+            "penalties": result["penalties"],
+            "tracks": result["tracks"],
+            "url": ann["url"],
+        })
         candidates.append((ann, result))
         processed_ids.add(ann_id)
 
-    # 同一股票今日只推最高分
     to_push = {}
     for ann, result in candidates:
-        code  = ann["stock_code"]
+        code = ann["stock_code"]
         score = result["score"]
-        if score > daily_best["stocks"].get(code, 0) and result["is_positive"] and score >= 6:
+        best_score = daily_best["stocks"].get(code, 0)
+        if score > best_score and (result["should_push"] or result["should_summary"]):
             to_push[code] = (ann, result)
             daily_best["stocks"][code] = score
 
     pushed = 0
+    instant_pushed = 0
+    summary_candidates = []
     for code, (ann, result) in to_push.items():
-        push(ann, result)
-        pushed += 1
-        time.sleep(0.5)
+        summary_candidates.append((ann, result))
+        if result["should_push"]:
+            if push_instant(ann, result):
+                instant_pushed += 1
+                pushed += 1
+            time.sleep(0.5)
 
-    state["ids"]   = list(processed_ids)
+    if push_summary(summary_candidates, state):
+        pushed += 1
+
+    state["ids"] = list(processed_ids)
     state["daily"] = daily_best
     save_state(state)
 
-    print(f"本轮完成：命中 {len(candidates)} 条，推送 {pushed} 条")
-    print(f"{'='*50}\n")
+    print(f"本轮完成：抓取 {stats['seen']} 条 | 新处理 {stats['processed']} 条 | 命中 {len(candidates)} 条")
+    print(f"过滤统计：债券 {stats['bond']} | 忽略 {stats['ignored']} | 噪音 {stats['noise']} | 非目标 {stats['non_major']}")
+    print(f"推送统计：即时 {instant_pushed} 条 | 总推送 {pushed} 条")
+    print(f"{'=' * 50}\n")
+
 
 if __name__ == "__main__":
     main()
