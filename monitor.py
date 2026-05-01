@@ -16,12 +16,9 @@ DEFAULT_CONFIG = {
         "min_score": 6,
         "instant_score": 9,
         "summary_score": 6,
-        "watchlist_min_score": 4,
         "large_cap_penalty": 3,
         "preferred_track_bonus": 1,
-        "watchlist_bonus": 2,
     },
-    "watchlist": {"codes": [], "names": []},
     "ignore": {"codes": [], "names": [], "keywords": []},
     "preferred_tracks": [],
     "summary": {"enabled": True, "send_hours": [18, 24]},
@@ -29,7 +26,6 @@ DEFAULT_CONFIG = {
     "explosive": {
         "instant_only_explosive": True,
         "min_score": 9,
-        "allow_watchlist_override": False,
         "summary_min_score": 7
     },
     "keywords": [
@@ -142,8 +138,6 @@ UNCERTAINTY_KEYWORDS = CONFIG.get("uncertainty_keywords", [])
 NEGATIVE_KEYWORDS = CONFIG.get("negative_keywords", [])
 HOTTRACK_KEYWORDS = CONFIG["hottrack_keywords"]
 LARGE_CAPS = CONFIG["large_caps"]
-WATCHLIST_CODES = set(CONFIG["watchlist"].get("codes", []))
-WATCHLIST_NAMES = set(CONFIG["watchlist"].get("names", []))
 IGNORE_CODES = set(CONFIG["ignore"].get("codes", []))
 IGNORE_NAMES = set(CONFIG["ignore"].get("names", []))
 IGNORE_KEYWORDS = CONFIG["ignore"].get("keywords", [])
@@ -238,9 +232,6 @@ def is_major(title):
 def is_explosive_event(title):
     return any(kw in title for kw in EXPLOSIVE_EVENT_KEYWORDS)
 
-
-def is_watchlist(code, name):
-    return code in WATCHLIST_CODES or name in WATCHLIST_NAMES
 
 
 def is_ignored(code, name, title):
@@ -498,7 +489,6 @@ def analyze(ann):
     code = ann["stock_code"]
     board, limit, need_perm, is_st = get_stock_type(code, name)
     large_cap = is_large_cap(name)
-    watchlist = is_watchlist(code, name)
     explosive_event = is_explosive_event(title)
     procedural_hits = hit_keywords(title, PROCEDURAL_KEYWORDS)
     uncertainty_hits = hit_keywords(title, UNCERTAINTY_KEYWORDS)
@@ -572,12 +562,6 @@ def analyze(ann):
         bonuses.append(f"偏好赛道+{bonus}（{'、'.join(preferred_tracks)}）")
         reason += f"。命中个人偏好赛道（{'、'.join(preferred_tracks)}）+{bonus}分"
 
-    if watchlist:
-        bonus = THRESHOLDS.get("watchlist_bonus", 2)
-        score = min(10, score + bonus)
-        bonuses.append(f"自选股+{bonus}")
-        reason += f"。命中自选股 +{bonus}分"
-
     if large_cap:
         penalty = THRESHOLDS.get("large_cap_penalty", 3)
         score = max(3, score - penalty)
@@ -639,8 +623,6 @@ def analyze(ann):
     min_threshold = THRESHOLDS.get("min_score", 6)
     summary_threshold = EXPLOSIVE_CONFIG.get("summary_min_score", THRESHOLDS.get("summary_score", min_threshold))
     instant_only_explosive = EXPLOSIVE_CONFIG.get("instant_only_explosive", True)
-    allow_watchlist_override = EXPLOSIVE_CONFIG.get("allow_watchlist_override", False)
-
     # 正文校验：对高分公告抓取PDF，检查正文是否有负面内容
     content_verified = False
     content_text = ""
@@ -691,8 +673,6 @@ def analyze(ann):
         should_push = score >= instant_threshold and explosive_ready
     else:
         should_push = score >= instant_threshold and not negative_hits and not large_cap
-    if allow_watchlist_override and watchlist and score >= THRESHOLDS.get("watchlist_min_score", 4):
-        should_push = True
     should_summary = score >= summary_threshold and not negative_hits
 
     if score == 10:
@@ -724,7 +704,6 @@ def analyze(ann):
         "need_perm": need_perm,
         "is_st": is_st,
         "large_cap": large_cap,
-        "watchlist": watchlist,
         "bonuses": bonuses,
         "penalties": penalties,
         "procedural_hits": procedural_hits,
@@ -760,8 +739,6 @@ def push_text(title, content):
 
 def build_tags(analysis):
     tags = []
-    if analysis["watchlist"]:
-        tags.append("【自选】")
     if analysis.get("explosive_event"):
         tags.append("【爆发型】")
     if analysis["is_st"]:
@@ -863,8 +840,6 @@ def push_summary(candidates, state):
     lines = []
     for ann, result in top_items:
         flags = []
-        if result["watchlist"]:
-            flags.append("自选")
         if result["tracks"]:
             flags.append("/".join(result["tracks"]))
         flag_text = f"（{'；'.join(flags)}）" if flags else ""
@@ -976,7 +951,7 @@ def main():
             processed_ids.add(ann_id)
             stats["noise"] += 1
             continue
-        if not (is_major(title) or is_watchlist(code, name)):
+        if not is_major(title):
             processed_ids.add(ann_id)
             stats["non_major"] += 1
             continue

@@ -3,17 +3,11 @@
     "min_score": 6,
     "instant_score": 9,
     "summary_score": 6,
-    "watchlist_min_score": 4,
     "large_cap_penalty": 3,
     "preferred_track_bonus": 1,
-    "watchlist_bonus": 2,
     "procedural_penalty": 2,
     "uncertainty_penalty": 2,
     "negative_penalty": 5
-  },
-  "watchlist": {
-    "codes": [],
-    "names": []
   },
   "ignore": {
     "codes": [],
@@ -48,7 +42,6 @@
   "explosive": {
     "instant_only_explosive": true,
     "min_score": 9,
-    "allow_watchlist_override": false,
     "summary_min_score": 7
   },
   "keywords": [
