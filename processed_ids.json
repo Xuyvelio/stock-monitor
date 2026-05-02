@@ -1486,9 +1486,5 @@
   ],
   "updated": "reset",
   "daily": {},
-  "summary": {
-    "date": "2026-05-01",
-    "sent_hours": [],
-    "pushed_ids": []
-  }
+  "summary": {}
 }

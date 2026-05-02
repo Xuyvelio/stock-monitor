@@ -24,13 +24,13 @@ jobs:
       - name: 安装依赖
         run: pip install -r requirements.txt
 
-      - name: 恢复缓存
-        uses: actions/cache@v4
-        with:
-          path: processed_ids.json
-          key: processed-ids-${{ github.run_id }}
-          restore-keys: |
-            processed-ids-
+      # - name: 恢复缓存
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: processed_ids.json
+      #     key: processed-ids-${{ github.run_id }}
+      #     restore-keys: |
+      #       processed-ids-
 
       - name: 运行监控
         env:
