@@ -28,7 +28,7 @@ DEFAULT_CONFIG = {
     "logging": {"enabled": True, "file": "daily_log.jsonl"},
     "explosive": {
         "instant_only_explosive": True,
-        "min_score": 9,
+        "min_score": 6,
         "summary_min_score": 7
     },
     "keywords": [
@@ -828,7 +828,7 @@ def push_summary(candidates, state):
         return False
 
     now = datetime.now()
-    current_hour = now.hour
+    beijing_hour = (now.hour + 8) % 24
     send_hours = sorted(SUMMARY_CONFIG.get("send_hours", [18, 24]))
 
     today = str(date.today())
@@ -847,10 +847,10 @@ def push_summary(candidates, state):
         effective_h = h % 24
         if h == 24:
             # 午夜汇总：23:00之后或次日0:00都算
-            if effective_h not in sent_hours and (current_hour >= 23 or current_hour == 0):
+            if effective_h not in sent_hours and (beijing_hour >= 23 or beijing_hour == 0):
                 target_hour = h
                 break
-        elif effective_h not in sent_hours and current_hour >= effective_h:
+        elif effective_h not in sent_hours and beijing_hour >= effective_h:
             target_hour = h
             break
 

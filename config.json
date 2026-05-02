@@ -41,7 +41,7 @@
   },
   "explosive": {
     "instant_only_explosive": true,
-    "min_score": 9,
+    "min_score": 6,
     "summary_min_score": 7
   },
   "keywords": [

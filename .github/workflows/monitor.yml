@@ -24,13 +24,13 @@ jobs:
       - name: 安装依赖
         run: pip install -r requirements.txt
 
-      # - name: 恢复缓存
-      #   uses: actions/cache@v4
-      #   with:
-      #     path: processed_ids.json
-      #     key: processed-ids-${{ github.run_id }}
-      #     restore-keys: |
-      #       processed-ids-
+      - name: 恢复缓存
+        uses: actions/cache@v4
+        with:
+          path: processed_ids.json
+          key: processed-ids-${{ github.run_id }}
+          restore-keys: |
+            processed-ids-
 
       - name: 运行监控
         env:
@@ -38,15 +38,10 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: python monitor.py
 
-      - name: 测试多Key推送
-        env:
-          SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
-        run: python -c "import os; from monitor import push_text; push_text('多Key推送测试', '如果你在两个方糖账号都收到了这条消息，说明多Key推送配置成功。')"
-
-      # - name: 保存状态
-      #   run: |
-      #     git config user.name "github-actions[bot]"
-      #     git config user.email "github-actions[bot]@users.noreply.github.com"
-      #     git add processed_ids.json
-      #     git diff --cached --quiet || git commit -m "chore: update monitor state [skip ci]"
-      #     git push || true
+      - name: 保存状态
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add processed_ids.json
+          git diff --cached --quiet || git commit -m "chore: update monitor state [skip ci]"
+          git push || true
