@@ -165,7 +165,7 @@ def get_pages():
     elif 9 <= hour < 15:
         return 60
     else:
-        return 30
+        return 40
 
 
 # ─────────────────────────────────────────
