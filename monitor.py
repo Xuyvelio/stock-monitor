@@ -980,7 +980,7 @@ def main():
 
     anns = fetch_announcements()
     candidates = []
-    stats = {"seen": len(anns), "processed": 0, "ignored": 0, "noise": 0, "non_major": 0, "bond": 0}
+    stats = {"seen": len(anns), "processed": 0, "ignored": 0, "noise": 0, "non_major": 0, "bond": 0, "large_cap": 0}
 
     for ann in anns:
         ann_id = ann["id"]
@@ -1007,6 +1007,11 @@ def main():
         if is_noise(title):
             processed_ids.add(ann_id)
             stats["noise"] += 1
+            continue
+        if is_large_cap(name):
+            processed_ids.add(ann_id)
+            stats.setdefault("large_cap", 0)
+            stats["large_cap"] += 1
             continue
         if not is_major(title):
             processed_ids.add(ann_id)
@@ -1062,7 +1067,7 @@ def main():
     save_state(state)
 
     print(f"本轮完成：抓取 {stats['seen']} 条 | 新处理 {stats['processed']} 条 | 命中 {len(candidates)} 条")
-    print(f"过滤统计：债券 {stats['bond']} | 忽略 {stats['ignored']} | 噪音 {stats['noise']} | 非目标 {stats['non_major']}")
+    print(f"过滤统计：债券 {stats['bond']} | 大盘股 {stats['large_cap']} | 忽略 {stats['ignored']} | 噪音 {stats['noise']} | 非目标 {stats['non_major']}")
     print(f"推送统计：即时 {instant_pushed} 条 | 总推送 {pushed} 条")
     print(f"{'=' * 50}\n")
 
