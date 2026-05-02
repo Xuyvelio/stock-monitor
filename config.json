@@ -33,7 +33,7 @@
   ],
   "summary": {
     "enabled": true,
-    "send_hours": [13, 18, 23]
+    "send_hours": [19]
   },
   "logging": {
     "enabled": true,
@@ -41,7 +41,7 @@
   },
   "explosive": {
     "instant_only_explosive": true,
-    "min_score": 6,
+    "min_score": 7,
     "summary_min_score": 7
   },
   "keywords": [

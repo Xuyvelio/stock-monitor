@@ -24,11 +24,11 @@ DEFAULT_CONFIG = {
     },
     "ignore": {"codes": [], "names": [], "keywords": []},
     "preferred_tracks": [],
-    "summary": {"enabled": True, "send_hours": [13, 18, 23]},
+    "summary": {"enabled": True, "send_hours": [19]},
     "logging": {"enabled": True, "file": "daily_log.jsonl"},
     "explosive": {
         "instant_only_explosive": True,
-        "min_score": 6,
+        "min_score": 7,
         "summary_min_score": 7
     },
     "keywords": [
@@ -875,7 +875,7 @@ def push_summary(candidates, state):
     summary_items.sort(key=lambda item: item[1]["score"], reverse=True)
     top_items = summary_items[:10]
 
-    time_label = "午间" if target_hour <= 13 else ("盘后" if target_hour <= 18 else "晚间")
+    time_label = "盘后"
     lines = []
     for ann, result in top_items:
         flags = []
