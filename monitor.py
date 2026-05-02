@@ -159,11 +159,11 @@ if not DEEPSEEK_API_KEY:
 def get_pages():
     hour = datetime.now().hour
     if 15 <= hour < 20:
-        return 20
+        return 50
     elif 9 <= hour < 15:
-        return 8
+        return 20
     else:
-        return 6
+        return 15
 
 
 # ─────────────────────────────────────────
