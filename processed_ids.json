@@ -1485,15 +1485,10 @@
     "AN202604291821725468"
   ],
   "updated": "reset",
-  "daily": {
-    "date": "2026-05-02",
-    "stocks": {}
-  },
+  "daily": {},
   "summary": {
     "date": "2026-05-01",
-    "sent_hours": [
-      18
-    ],
+    "sent_hours": [],
     "pushed_ids": []
   }
 }
