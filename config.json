@@ -33,7 +33,7 @@
   ],
   "summary": {
     "enabled": true,
-    "send_hours": [13, 17, 23]
+    "send_hours": [13, 18, 23]
   },
   "logging": {
     "enabled": true,
