@@ -97,7 +97,7 @@ DEFAULT_CONFIG = {
         "创新药": ["创新药", "生物医药", "基因", "细胞治疗", "新药", "CXO"],
         "量子/卫星": ["量子", "卫星互联网", "商业航天", "北斗"],
     },
-    "max_market_cap": 500,
+    "max_market_cap": 400,
     "large_caps": [
         "中国神华", "中国电建", "中国建筑", "中国中铁", "中国铁建",
         "工商银行", "建设银行", "农业银行", "中国银行", "招商银行",
@@ -148,7 +148,7 @@ IGNORE_KEYWORDS = CONFIG["ignore"].get("keywords", [])
 PREFERRED_TRACKS = set(CONFIG.get("preferred_tracks", []))
 SUMMARY_CONFIG = CONFIG.get("summary", {})
 LOGGING_CONFIG = CONFIG.get("logging", {})
-MAX_MARKET_CAP = CONFIG.get("max_market_cap", 500)  # 亿元
+MAX_MARKET_CAP = CONFIG.get("max_market_cap", 400)  # 亿元
 
 # API key: 环境变量优先，config.json 兜底
 if not DEEPSEEK_API_KEY:
