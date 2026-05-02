@@ -13,6 +13,9 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: 安装依赖
+        run: pip install requests
+
       - name: 测试推送
         env:
           SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
