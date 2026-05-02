@@ -161,7 +161,7 @@ if not DEEPSEEK_API_KEY:
 def get_pages():
     hour = datetime.now().hour
     if 15 <= hour < 20:
-        return 50
+        return 80
     elif 9 <= hour < 15:
         return 60
     else:
@@ -179,6 +179,7 @@ def fetch_announcements():
     }
     all_items = []
     pages = get_pages()
+    fetched = 0
     for page in range(1, pages + 1):
         params = {
             "sr": -1,
@@ -195,6 +196,7 @@ def fetch_announcements():
             if not items:
                 break
             all_items.extend(items)
+            fetched = page
             time.sleep(0.3)
         except Exception as e:
             print(f"[抓取第{page}页失败] {e}")
@@ -211,7 +213,8 @@ def fetch_announcements():
             "time": item.get("notice_date", ""),
             "url": f"https://data.eastmoney.com/notices/detail/{code}/{item.get('art_code', '')}.html",
         })
-    print(f"共抓取 {len(announcements)} 条（{pages}页）")
+    warning = "⚠️ 可能未抓完" if fetched == pages else ""
+    print(f"共抓取 {len(announcements)} 条（实抓{fetched}页/上限{pages}页）{warning}")
     return announcements
 
 
