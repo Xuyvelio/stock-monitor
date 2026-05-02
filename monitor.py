@@ -97,6 +97,7 @@ DEFAULT_CONFIG = {
         "创新药": ["创新药", "生物医药", "基因", "细胞治疗", "新药", "CXO"],
         "量子/卫星": ["量子", "卫星互联网", "商业航天", "北斗"],
     },
+    "max_market_cap": 500,
     "large_caps": [
         "中国神华", "中国电建", "中国建筑", "中国中铁", "中国铁建",
         "工商银行", "建设银行", "农业银行", "中国银行", "招商银行",
@@ -147,6 +148,7 @@ IGNORE_KEYWORDS = CONFIG["ignore"].get("keywords", [])
 PREFERRED_TRACKS = set(CONFIG.get("preferred_tracks", []))
 SUMMARY_CONFIG = CONFIG.get("summary", {})
 LOGGING_CONFIG = CONFIG.get("logging", {})
+MAX_MARKET_CAP = CONFIG.get("max_market_cap", 500)  # 亿元
 
 # API key: 环境变量优先，config.json 兜底
 if not DEEPSEEK_API_KEY:
@@ -346,6 +348,7 @@ def _fetch_market_data(code):
             "is_limit_down": is_limit_down,
             "volume": int(fields[6]) if fields[6] else 0,
             "amount": float(fields[37]) if fields[37] else 0,  # 万元
+            "total_market_cap": float(fields[44]) if fields[44] else 0,  # 亿元
         }
     except Exception as e:
         print(f"[行情获取失败] {code}: {e}")
@@ -620,6 +623,18 @@ def analyze(ann):
     # 获取行情数据
     market = get_market_data(code)
     market_info = ""
+    if market and market.get("total_market_cap", 0) > MAX_MARKET_CAP:
+        return {
+            "is_positive": False, "should_push": False, "should_summary": False,
+            "score": 0, "base_score": 0, "level": "🏢 市值超标", "burst": "无",
+            "alert_tier": "D", "event_type": "市值超标(>{MAX_MARKET_CAP}亿)",
+            "reason": f"{name}总市值{market['total_market_cap']:.0f}亿，超过{MAX_MARKET_CAP}亿上限，跳过",
+            "tracks": [], "preferred_tracks": [], "board": board, "limit": limit,
+            "need_perm": need_perm, "is_st": is_st, "large_cap": large_cap,
+            "bonuses": [], "penalties": [], "procedural_hits": [], "uncertainty_hits": [],
+            "negative_hits": [], "explosive_event": False, "explosive_ready": False,
+            "market": market, "market_info": "", "content_verified": False, "ai_result": None,
+        }
     if market:
         market_info = f"现价{market['price']} 涨跌{market['change_pct']}% 换手{market['turnover']}%"
         # 已涨停 - 可能买不进了
