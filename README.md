@@ -137,7 +137,7 @@
 
 仓库需要配置 Secrets：
 
-- `SERVERCHAN_KEY`：Server 酱推送 key
+- `SERVERCHAN_KEY`：Server 酱推送 key，多账号用英文逗号分隔，如 `key1,key2`
 - `DEEPSEEK_API_KEY`：DeepSeek API key
 
 Workflow permissions 需设为 **Read and write permissions**（用于推送状态文件）。

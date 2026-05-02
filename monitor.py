@@ -7,7 +7,7 @@ import re
 import subprocess
 import tempfile
 
-SERVERCHAN_KEY = os.environ.get("SERVERCHAN_KEY", "")
+SERVERCHAN_KEYS = [k.strip() for k in os.environ.get("SERVERCHAN_KEY", "").split(",") if k.strip()]
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL = "deepseek-chat"
@@ -751,19 +751,22 @@ def analyze(ann):
 # 推送微信
 # ─────────────────────────────────────────
 def push_text(title, content):
-    if not SERVERCHAN_KEY:
+    if not SERVERCHAN_KEYS:
         return False
-    try:
-        r = requests.post(
-            f"https://sctapi.ftqq.com/{SERVERCHAN_KEY}.send",
-            data={"title": title, "desp": content},
-            timeout=10,
-        )
-        print(f"[推送] {title} → code:{r.json().get('code')}")
-        return True
-    except Exception as e:
-        print(f"[推送失败] {e}")
-        return False
+    ok = False
+    for key in SERVERCHAN_KEYS:
+        try:
+            r = requests.post(
+                f"https://sctapi.ftqq.com/{key}.send",
+                data={"title": title, "desp": content},
+                timeout=10,
+            )
+            code = r.json().get("code")
+            print(f"[推送] {title} → key:{key[:8]}... code:{code}")
+            ok = True
+        except Exception as e:
+            print(f"[推送失败] key:{key[:8]}... {e}")
+    return ok
 
 
 def build_tags(analysis):
@@ -821,7 +824,7 @@ def push_instant(ann, analysis):
 
 
 def push_summary(candidates, state):
-    if not SERVERCHAN_KEY or not SUMMARY_CONFIG.get("enabled", True):
+    if not SERVERCHAN_KEYS or not SUMMARY_CONFIG.get("enabled", True):
         return False
 
     now = datetime.now()
