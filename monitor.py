@@ -630,7 +630,7 @@ def analyze(ann):
         return {
             "is_positive": False, "should_push": False, "should_summary": False,
             "score": 0, "base_score": 0, "level": "🏢 市值超标", "burst": "无",
-            "alert_tier": "D", "event_type": "市值超标(>{MAX_MARKET_CAP}亿)",
+            "alert_tier": "D", "event_type": f"市值超标(>{MAX_MARKET_CAP}亿)",
             "reason": f"{name}总市值{market['total_market_cap']:.0f}亿，超过{MAX_MARKET_CAP}亿上限，跳过",
             "tracks": [], "preferred_tracks": [], "board": board, "limit": limit,
             "need_perm": need_perm, "is_st": is_st, "large_cap": large_cap,
