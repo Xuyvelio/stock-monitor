@@ -28,9 +28,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: processed_ids.json
-          key: processed-ids-${{ github.run_id }}
-          restore-keys: |
-            processed-ids-
+          key: processed-ids-main
 
       - name: 运行监控
         env:

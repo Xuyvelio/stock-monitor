@@ -2,7 +2,7 @@ import os
 import json
 import time
 import requests
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import re
 import subprocess
 import tempfile
@@ -13,6 +13,8 @@ DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL = "deepseek-chat"
 STATE_FILE = "processed_ids.json"
 CONFIG_FILE = "config.json"
+MAX_ANNOUNCEMENT_AGE_DAYS = 3
+ID_RETENTION_DAYS = 7
 
 DEFAULT_CONFIG = {
     "thresholds": {
@@ -159,10 +161,10 @@ if not DEEPSEEK_API_KEY:
 # 动态抓取页数（根据时间段）
 # ─────────────────────────────────────────
 def get_pages():
-    hour = datetime.now().hour
-    if 15 <= hour < 20:
+    beijing_hour = (datetime.now().hour + 8) % 24
+    if 15 <= beijing_hour < 20:
         return 80
-    elif 9 <= hour < 15:
+    elif 9 <= beijing_hour < 15:
         return 60
     else:
         return 40
@@ -929,6 +931,29 @@ def push_summary(candidates, state):
 
 
 # ─────────────────────────────────────────
+# 从公告ID中提取日期（格式 AN202604301821...）
+# ─────────────────────────────────────────
+def extract_date_from_id(ann_id):
+    m = re.match(r"AN(\d{8})", ann_id)
+    if m:
+        try:
+            return datetime.strptime(m.group(1), "%Y%m%d").date()
+        except ValueError:
+            pass
+    return None
+
+
+def trim_old_ids(ids, cutoff_date):
+    """只保留 cutoff_date 之后的ID，旧ID因日期过滤已无保留必要"""
+    surviving = []
+    for aid in ids:
+        d = extract_date_from_id(aid)
+        if d is None or d >= cutoff_date:
+            surviving.append(aid)
+    return surviving
+
+
+# ─────────────────────────────────────────
 # 状态管理
 # ─────────────────────────────────────────
 def load_state():
@@ -938,6 +963,9 @@ def load_state():
             state.setdefault("ids", [])
             state.setdefault("daily", {})
             state.setdefault("summary", {})
+            # 清理超过保留期限的旧ID
+            cutoff = date.today() - timedelta(days=ID_RETENTION_DAYS)
+            state["ids"] = trim_old_ids(state["ids"], cutoff)
             return state
     except FileNotFoundError:
         return {"ids": [], "daily": {}, "summary": {}}
@@ -947,7 +975,8 @@ def load_state():
 
 
 def save_state(state):
-    state["ids"] = list(state["ids"])[-2000:]
+    cutoff = date.today() - timedelta(days=ID_RETENTION_DAYS)
+    state["ids"] = trim_old_ids(state["ids"], cutoff)
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
@@ -993,6 +1022,12 @@ def main():
 
         if ann_id in processed_ids:
             continue
+
+        ann_date = extract_date_from_id(ann_id)
+        if ann_date and ann_date < date.today() - timedelta(days=MAX_ANNOUNCEMENT_AGE_DAYS):
+            processed_ids.add(ann_id)
+            continue
+
         stats["processed"] += 1
 
         if is_bond(code):
